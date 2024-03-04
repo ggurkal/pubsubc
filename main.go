@@ -64,14 +64,50 @@ func create(ctx context.Context, projectID string, topics Topics) error {
 		for _, subscription := range subscriptions {
 			subscriptionParts := strings.Split(subscription, "+")
 			subscriptionID := subscriptionParts[0]
-			pushEndpoint := strings.Replace(subscriptionParts[1], "|", ":", 1)
-			debugf("    Creating subscription %q", subscriptionID)
-			if pushEndpoint != "" {
+			if len(subscriptionParts) > 1 {
+				pushEndpoint := strings.Replace(subscriptionParts[1], "|", ":", 1)
+				debugf("    Creating push subscription %q with target %q", subscriptionID, pushEndpoint)
 				pushConfig := pubsub.PushConfig{Endpoint: "http://" + pushEndpoint}
+				var deadLetterPolicy *pubsub.DeadLetterPolicy
+
+				if len(subscriptionParts) == 3 && subscriptionParts[2] == "dlq" {
+					dlqTopicID := fmt.Sprintf("%s-dlq", topicID)
+					debugf("      Creating DLQ topic %q", dlqTopicID)
+
+					dlqTopic, err := client.CreateTopic(ctx, dlqTopicID)
+					if err != nil {
+						return fmt.Errorf("      Unable to create dead letter topic for topic %q for project %q: %s", topicID, projectID, err)
+					}
+
+					dlqSubscriptionID := fmt.Sprintf("%s-dlq", subscriptionID)
+
+					_, err = client.CreateSubscription(
+						ctx,
+						dlqSubscriptionID,
+						pubsub.SubscriptionConfig{
+							Topic:      dlqTopic,
+							PushConfig: pubsub.PushConfig{Endpoint: fmt.Sprintf("http://%s/dead", pushEndpoint)},
+						},
+					)
+					if err != nil {
+						return fmt.Errorf("      Unable to create dead letter subscription for topic %q for project %q: %s", dlqTopicID, projectID, err)
+					}
+
+					deadLetterPolicy = &pubsub.DeadLetterPolicy{
+						DeadLetterTopic:     dlqTopic.String(),
+						MaxDeliveryAttempts: 5, // The default value set by GCP
+					}
+					debugf("      The topic %q on project %q has a dead letter policy", topicID, projectID)
+				}
+
 				_, err = client.CreateSubscription(
 					ctx,
 					subscriptionID,
-					pubsub.SubscriptionConfig{Topic: topic, PushConfig: pushConfig},
+					pubsub.SubscriptionConfig{
+						Topic:            topic,
+						PushConfig:       pushConfig,
+						DeadLetterPolicy: deadLetterPolicy,
+					},
 				)
 				if err != nil {
 					return fmt.Errorf("Unable to create push subscription %q on topic %q for project %q using push endpoint %q: %s", subscriptionID, topicID, projectID, pushEndpoint, err)
