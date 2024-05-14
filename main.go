@@ -85,8 +85,9 @@ func create(ctx context.Context, projectID string, topics Topics) error {
 						ctx,
 						dlqSubscriptionID,
 						pubsub.SubscriptionConfig{
-							Topic:      dlqTopic,
-							PushConfig: pubsub.PushConfig{Endpoint: fmt.Sprintf("http://%s/dead", pushEndpoint)},
+							Topic:                 dlqTopic,
+							PushConfig:            pubsub.PushConfig{Endpoint: fmt.Sprintf("http://%s/dead", pushEndpoint)},
+							EnableMessageOrdering: true,
 						},
 					)
 					if err != nil {
@@ -104,9 +105,10 @@ func create(ctx context.Context, projectID string, topics Topics) error {
 					ctx,
 					subscriptionID,
 					pubsub.SubscriptionConfig{
-						Topic:            topic,
-						PushConfig:       pushConfig,
-						DeadLetterPolicy: deadLetterPolicy,
+						Topic:                 topic,
+						PushConfig:            pushConfig,
+						DeadLetterPolicy:      deadLetterPolicy,
+						EnableMessageOrdering: true,
 					},
 				)
 				if err != nil {
